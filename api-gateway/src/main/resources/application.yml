@@ -1,0 +1,37 @@
+spring:
+  application:
+    name: api-gateway
+  main:
+    web-application-type: reactive
+  cloud:
+    gateway:
+      routes:
+        - id: user-management
+          uri: http://localhost:8082
+          predicates:
+            - Path=/api/users/**
+          filters:
+            - StripPrefix=0
+
+        - id: document-editing
+          uri: http://localhost:8083
+          predicates:
+            - Path=/api/documents/**
+          filters:
+            - StripPrefix=0
+
+        - id: version-control
+          uri: http://localhost:8084
+          predicates:
+            - Path=/api/versions/**
+          filters:
+            - StripPrefix=0
+
+server:
+  port: 8081
+  tomcat:
+    max-http-header-size: 20KB
+
+eureka:
+  client:
+    enabled: false

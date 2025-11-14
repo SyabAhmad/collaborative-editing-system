@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: version-control-service
+  datasource:
+    url: jdbc:postgresql://localhost:5432/version_control
+    username: postgres
+    password: mentee
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    show-sql: false
+
+server:
+  port: 8084

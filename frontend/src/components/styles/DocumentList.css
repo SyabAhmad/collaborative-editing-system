@@ -1,0 +1,103 @@
+.document-list {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.document-list h1 {
+  color: #333;
+  margin-bottom: 2rem;
+}
+
+.create-doc {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.create-doc input {
+  flex: 1;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+.create-doc input:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.create-doc button {
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.create-doc button:hover {
+  opacity: 0.9;
+}
+
+.error-message {
+  background-color: #fee;
+  color: #c33;
+  padding: 1rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+  border-left: 4px solid #c33;
+}
+
+.documents-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1.5rem;
+}
+
+.document-card {
+  background: white;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s, box-shadow 0.3s;
+}
+
+.document-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+}
+
+.document-card h3 {
+  margin: 0 0 0.5rem 0;
+  color: #333;
+}
+
+.document-card p {
+  color: #666;
+  margin: 0.5rem 0 1rem 0;
+  font-size: 0.9rem;
+}
+
+.doc-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.doc-actions button {
+  flex: 1;
+  padding: 0.5rem;
+  background: #f0f0f0;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background 0.3s;
+}
+
+.doc-actions button:hover {
+  background: #e0e0e0;
+}
