@@ -93,8 +93,15 @@ public class VersionControlService {
     }
 
     private DocumentVersionDTO convertToDTO(DocumentVersion version) {
-        return new DocumentVersionDTO(version.getId(), version.getDocumentId(), version.getVersionNumber(),
-                version.getContent(), version.getCreatedBy(), version.getDescription());
+        return new DocumentVersionDTO(
+            version.getId(),
+            version.getDocumentId(),
+            version.getVersionNumber(),
+            version.getContent(),
+            version.getCreatedBy(),
+            version.getCreatedAt() != null ? version.getCreatedAt().toString() : null,
+            version.getDescription()
+        );
     }
 
     private UserContributionDTO convertContributionToDTO(UserContribution contribution) {

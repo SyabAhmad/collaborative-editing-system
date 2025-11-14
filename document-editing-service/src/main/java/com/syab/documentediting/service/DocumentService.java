@@ -92,8 +92,14 @@ public class DocumentService {
     }
 
     private DocumentDTO convertToDTO(Document document) {
-        return new DocumentDTO(document.getId(), document.getTitle(), document.getContent(),
-                document.getOwnerId(), document.getIsShared());
+        return new DocumentDTO(
+            document.getId(),
+            document.getTitle(),
+            document.getContent(),
+            document.getOwnerId(),
+            document.getIsShared(),
+            document.getUpdatedAt() != null ? document.getUpdatedAt().toString() : null
+        );
     }
 
     private DocumentChangeDTO convertChangeToDTO(DocumentChange change) {

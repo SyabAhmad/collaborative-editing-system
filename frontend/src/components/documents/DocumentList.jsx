@@ -15,13 +15,14 @@ import {
   Fab,
   Tooltip,
   Chip,
-} from '@mui/material';
+} from "@mui/material";
 import {
   Add as AddIcon,
   Edit as EditIcon,
   History as HistoryIcon,
   Description as DescriptionIcon,
-} from '@mui/icons-material';
+  Share as ShareIcon,
+} from "@mui/icons-material";
 import { useAuth } from "../../context/AuthContext";
 import { documentAPI } from "../../services/endpoints";
 
@@ -64,14 +65,43 @@ const DocumentList = () => {
     }
   };
 
+  const handleShareDocument = async (docId) => {
+    const shareUrl = `${window.location.origin}/documents/${docId}/edit`;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      // Could add a toast notification here
+      alert("Document link copied to clipboard!");
+    } catch (err) {
+      // Fallback for older browsers
+      const textArea = document.createElement("textarea");
+      textArea.value = shareUrl;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textArea);
+      alert("Document link copied to clipboard!");
+    }
+  };
+
   return (
     <Container maxWidth={false}>
       <Box sx={{ py: 4 }}>
-        <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 300, mb: 4 }}>
-          My Documents
-        </Typography>
+        <Box sx={{ mb: 4 }}>
+          <Typography
+            variant="h4"
+            component="h1"
+            gutterBottom
+            sx={{ fontWeight: 300, color: "text.primary" }}
+          >
+            My Documents
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Collaborate on documents with your team. Create, edit, and share in
+            real-time.
+          </Typography>
+        </Box>
 
-        <Box sx={{ display: 'flex', gap: 2, mb: 4, alignItems: 'center' }}>
+        <Box sx={{ display: "flex", gap: 2, mb: 4, alignItems: "center" }}>
           <TextField
             fullWidth
             variant="outlined"
@@ -104,7 +134,10 @@ const DocumentList = () => {
               <Grid item xs={12} sm={6} md={4} key={index}>
                 <Card>
                   <CardContent>
-                    <Skeleton variant="text" sx={{ fontSize: '1.5rem', mb: 2 }} />
+                    <Skeleton
+                      variant="text"
+                      sx={{ fontSize: "1.5rem", mb: 2 }}
+                    />
                     <Skeleton variant="text" />
                     <Skeleton variant="text" />
                     <Skeleton variant="text" width="60%" />
@@ -120,17 +153,25 @@ const DocumentList = () => {
         ) : documents.length === 0 ? (
           <Box
             sx={{
-              textAlign: 'center',
+              textAlign: "center",
               py: 8,
               px: 2,
             }}
           >
-            <DescriptionIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+            <DescriptionIcon
+              sx={{ fontSize: 64, color: "text.secondary", mb: 2 }}
+            />
             <Typography variant="h6" color="text.secondary" gutterBottom>
               No documents yet
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              Create your first document to get started with collaborative editing.
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ mb: 3, textAlign: "center" }}
+            >
+              Create your first document to get started with collaborative
+              editing. Share documents with your team and work together in
+              real-time.
             </Typography>
           </Box>
         ) : (
@@ -139,22 +180,29 @@ const DocumentList = () => {
               <Grid item xs={12} sm={6} md={4} key={doc.id}>
                 <Card
                   sx={{
-                    height: '100%',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    cursor: 'pointer',
-                    transition: 'all 0.3s ease',
-                    '&:hover': {
-                      transform: 'translateY(-4px)',
+                    height: "100%",
+                    display: "flex",
+                    flexDirection: "column",
+                    cursor: "pointer",
+                    transition: "all 0.3s ease",
+                    border: "1px solid",
+                    borderColor: "divider",
+                    "&:hover": {
+                      transform: "translateY(-4px)",
                       boxShadow: (theme) => theme.shadows[8],
+                      borderColor: "primary.main",
                     },
                   }}
                   onClick={() => navigate(`/documents/${doc.id}/edit`)}
                 >
                   <CardContent sx={{ flexGrow: 1 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                      <DescriptionIcon sx={{ mr: 1, color: 'primary.main' }} />
-                      <Typography variant="h6" component="h3" sx={{ flexGrow: 1 }}>
+                    <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
+                      <DescriptionIcon sx={{ mr: 1, color: "primary.main" }} />
+                      <Typography
+                        variant="h6"
+                        component="h3"
+                        sx={{ flexGrow: 1 }}
+                      >
                         {doc.title}
                       </Typography>
                     </Box>
@@ -162,38 +210,67 @@ const DocumentList = () => {
                       variant="body2"
                       color="text.secondary"
                       sx={{
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        display: '-webkit-box',
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        display: "-webkit-box",
                         WebkitLineClamp: 3,
-                        WebkitBoxOrient: 'vertical',
+                        WebkitBoxOrient: "vertical",
                         lineHeight: 1.4,
                       }}
                     >
-                      {doc.content?.substring(0, 150) || 'No content yet...'}
+                      {doc.content?.substring(0, 150) || "No content yet..."}
                     </Typography>
-                    <Box sx={{ mt: 2 }}>
+                    <Box
+                      sx={{
+                        mt: 2,
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}
+                    >
                       <Chip
                         label={`ID: ${doc.id}`}
                         size="small"
                         variant="outlined"
-                        sx={{ fontSize: '0.7rem' }}
+                        sx={{ fontSize: "0.7rem" }}
                       />
+                      {doc.updatedAt && (
+                        <Typography variant="caption" color="text.secondary">
+                          Updated:{" "}
+                          {new Date(doc.updatedAt).toLocaleDateString()}
+                        </Typography>
+                      )}
                     </Box>
                   </CardContent>
-                  <CardActions sx={{ justifyContent: 'space-between', px: 2, pb: 2 }}>
-                    <Tooltip title="Edit Document">
-                      <Button
-                        size="small"
-                        startIcon={<EditIcon />}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/documents/${doc.id}/edit`);
-                        }}
-                      >
-                        Edit
-                      </Button>
-                    </Tooltip>
+                  <CardActions
+                    sx={{ justifyContent: "space-between", px: 2, pb: 2 }}
+                  >
+                    <Box sx={{ display: "flex", gap: 1 }}>
+                      <Tooltip title="Edit Document">
+                        <Button
+                          size="small"
+                          startIcon={<EditIcon />}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/documents/${doc.id}/edit`);
+                          }}
+                        >
+                          Edit
+                        </Button>
+                      </Tooltip>
+                      <Tooltip title="Share Document">
+                        <Button
+                          size="small"
+                          startIcon={<ShareIcon />}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleShareDocument(doc.id);
+                          }}
+                        >
+                          Share
+                        </Button>
+                      </Tooltip>
+                    </Box>
                     <Tooltip title="View Version History">
                       <Button
                         size="small"
@@ -218,13 +295,13 @@ const DocumentList = () => {
           <Fab
             color="primary"
             sx={{
-              position: 'fixed',
+              position: "fixed",
               bottom: 24,
               right: 24,
               zIndex: 1000,
             }}
             onClick={() => {
-              const title = prompt('Enter document title:');
+              const title = prompt("Enter document title:");
               if (title?.trim()) {
                 setNewDocTitle(title.trim());
                 handleCreateDocument();

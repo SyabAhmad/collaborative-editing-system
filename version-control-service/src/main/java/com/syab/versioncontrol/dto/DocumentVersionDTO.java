@@ -13,5 +13,6 @@ public class DocumentVersionDTO {
     private Integer versionNumber;
     private String content;
     private Long createdBy;
+    private String createdAt;
     private String description;
 }

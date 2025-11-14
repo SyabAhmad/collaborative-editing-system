@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { Button } from "@mui/material";
+import { Share as ShareIcon } from "@mui/icons-material";
 import { useAuth } from "../../context/AuthContext";
 import { documentAPI, versionAPI } from "../../services/endpoints";
 import "../styles/DocumentEditor.css";
@@ -64,6 +66,22 @@ const DocumentEditor = () => {
     }
   };
 
+  const handleShareDocument = async () => {
+    const shareUrl = `${window.location.origin}/documents/${id}/edit`;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      alert("Document link copied to clipboard!");
+    } catch (err) {
+      const textArea = document.createElement("textarea");
+      textArea.value = shareUrl;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textArea);
+      alert("Document link copied to clipboard!");
+    }
+  };
+
   return (
     <div className="document-editor">
       <div className="editor-header">
@@ -74,12 +92,24 @@ const DocumentEditor = () => {
           <h2>{document?.title || "New Document"}</h2>
         </div>
         <div className="editor-actions">
-          <button onClick={handleCreateVersion} className="version-btn">
+          <Button
+            variant="outlined"
+            startIcon={<ShareIcon />}
+            onClick={handleShareDocument}
+            sx={{ mr: 1 }}
+          >
+            Share
+          </Button>
+          <Button
+            variant="outlined"
+            onClick={handleCreateVersion}
+            sx={{ mr: 1 }}
+          >
             Create Version
-          </button>
-          <button onClick={handleSave} disabled={isSaving} className="save-btn">
+          </Button>
+          <Button variant="contained" onClick={handleSave} disabled={isSaving}>
             {isSaving ? "Saving..." : "Save"}
-          </button>
+          </Button>
         </div>
       </div>
 

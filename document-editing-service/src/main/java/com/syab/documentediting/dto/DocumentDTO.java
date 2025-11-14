@@ -13,4 +13,5 @@ public class DocumentDTO {
     private String content;
     private Long ownerId;
     private Boolean isShared;
+    private String updatedAt;
 }
