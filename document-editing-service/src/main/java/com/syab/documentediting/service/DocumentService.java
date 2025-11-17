@@ -19,10 +19,12 @@ import java.util.stream.Collectors;
 public class DocumentService {
     private final DocumentRepository documentRepository;
     private final DocumentChangeRepository changeRepository;
+    private final OTService otService;
 
-    public DocumentService(DocumentRepository documentRepository, DocumentChangeRepository changeRepository) {
+    public DocumentService(DocumentRepository documentRepository, DocumentChangeRepository changeRepository, OTService otService) {
         this.documentRepository = documentRepository;
         this.changeRepository = changeRepository;
+        this.otService = otService;
     }
 
     /**
@@ -36,7 +38,8 @@ public class DocumentService {
         document.setIsShared(false);
 
         Document savedDocument = documentRepository.save(document);
-        return convertToDTO(savedDocument);
+        int currentVersion = otService.getCurrentVersion(savedDocument.getId());
+        return convertToDTO(savedDocument, currentVersion);
     }
 
     /**
@@ -62,7 +65,8 @@ public class DocumentService {
         change.setOperationType(request.getOperationType());
         changeRepository.save(change);
 
-        return convertToDTO(updatedDocument);
+        int currentVersion = otService.getCurrentVersion(updatedDocument.getId());
+        return convertToDTO(updatedDocument, currentVersion);
     }
 
     /**
@@ -83,22 +87,32 @@ public class DocumentService {
         if (document.isEmpty()) {
             throw new IllegalArgumentException("Document not found");
         }
-        return convertToDTO(document.get());
+        Document doc = document.get();
+        // Get current content & version from OTService
+        String currentContent = otService.getDocumentContent(documentId);
+        if (currentContent == null) currentContent = "";
+        int currentVersion = otService.getCurrentVersion(documentId);
+        doc.setContent(currentContent);
+        return convertToDTO(doc, currentVersion);
     }
 
     public List<DocumentDTO> getUserDocuments(Long userId) {
         List<Document> documents = documentRepository.findByOwnerId(userId);
-        return documents.stream().map(this::convertToDTO).collect(Collectors.toList());
+        return documents.stream().map(doc -> {
+            int version = otService.getCurrentVersion(doc.getId());
+            return convertToDTO(doc, version);
+        }).collect(Collectors.toList());
     }
 
-    private DocumentDTO convertToDTO(Document document) {
+    private DocumentDTO convertToDTO(Document document, int version) {
         return new DocumentDTO(
             document.getId(),
             document.getTitle(),
             document.getContent(),
             document.getOwnerId(),
             document.getIsShared(),
-            document.getUpdatedAt() != null ? document.getUpdatedAt().toString() : null
+            document.getUpdatedAt() != null ? document.getUpdatedAt().toString() : null,
+            version
         );
     }
 

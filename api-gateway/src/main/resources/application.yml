@@ -27,11 +27,22 @@ spring:
           filters:
             - StripPrefix=0
 
+        - id: websocket
+          uri: http://localhost:8083
+          predicates:
+            - Path=/ws/**
+          filters:
+            - StripPrefix=0
+
+      websocket:
+        enabled: true
+
 server:
   port: 8081
   tomcat:
     max-http-header-size: 20KB
 
+# ensure websocket proxy is enabled (explicit property for some spring-cloud versions)
 eureka:
   client:
     enabled: false

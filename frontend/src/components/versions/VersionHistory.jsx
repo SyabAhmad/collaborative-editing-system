@@ -4,6 +4,39 @@ import { versionAPI, authAPI } from "../../services/endpoints";
 import { formatDate } from "../../utils/helpers";
 import "../styles/VersionHistory.css";
 
+const normalizeUserId = (rawUserId) => {
+  if (rawUserId === null || rawUserId === undefined) return undefined;
+  if (typeof rawUserId === "object") {
+    return rawUserId.userId ?? rawUserId.id ?? rawUserId.documentId;
+  }
+  if (typeof rawUserId === "string") {
+    const parsed = Number(rawUserId);
+    return Number.isNaN(parsed) ? rawUserId : parsed;
+  }
+  return rawUserId;
+};
+
+const normalizeContribution = (contribution, documentId) => {
+  if (!contribution || typeof contribution !== "object") return null;
+  const userId = normalizeUserId(contribution.userId);
+  const normalizedCount =
+    typeof contribution.changesCount === "number"
+      ? contribution.changesCount
+      : Number(contribution.changesCount ?? 0) || 0;
+
+  return {
+    ...contribution,
+    id:
+      contribution.id ??
+      `${userId ?? "unknown"}-${
+        documentId ?? contribution.documentId ?? "doc"
+      }`,
+    documentId: contribution.documentId ?? documentId ?? null,
+    userId,
+    changesCount: normalizedCount,
+  };
+};
+
 const VersionHistory = () => {
   const { documentId } = useParams();
   const navigate = useNavigate();
@@ -13,6 +46,31 @@ const VersionHistory = () => {
   const [error, setError] = useState("");
   const [userDetails, setUserDetails] = useState({});
 
+  const resolveUserName = useCallback(
+    (userId) => {
+      const normalizedId = normalizeUserId(userId);
+      if (normalizedId === undefined || normalizedId === null) {
+        return "User Unknown";
+      }
+
+      const user = userDetails[normalizedId];
+      if (!user) {
+        return `User ${normalizedId}`;
+      }
+
+      const fullName = [user.firstName, user.lastName]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+      if (fullName) {
+        return fullName;
+      }
+
+      return user.username || `User ${normalizedId}`;
+    },
+    [userDetails]
+  );
+
   useEffect(() => {
     fetchVersions();
     fetchContributions();
@@ -20,23 +78,38 @@ const VersionHistory = () => {
 
   const fetchUserDetails = useCallback(
     async (userIds) => {
-      const userMap = { ...userDetails };
-      for (const userId of userIds) {
-        if (!userMap[userId]) {
+      const normalizedIds = Array.from(
+        new Set(
+          (userIds || [])
+            .map((id) => normalizeUserId(id))
+            .filter((id) => id !== undefined && id !== null && !userDetails[id])
+        )
+      );
+
+      if (!normalizedIds.length) {
+        return;
+      }
+
+      const updates = {};
+      await Promise.all(
+        normalizedIds.map(async (userId) => {
           try {
             const response = await authAPI.getProfile(userId);
-            userMap[userId] = response.data;
+            updates[userId] = response.data;
           } catch (err) {
             console.error(`Failed to fetch user ${userId}:`, err);
-            userMap[userId] = {
+            updates[userId] = {
               username: `User ${userId}`,
               firstName: "",
               lastName: "",
             };
           }
-        }
+        })
+      );
+
+      if (Object.keys(updates).length) {
+        setUserDetails((prev) => ({ ...prev, ...updates }));
       }
-      setUserDetails(userMap);
     },
     [userDetails]
   );
@@ -48,8 +121,9 @@ const VersionHistory = () => {
       const versionList = response.data || [];
       setVersions(versionList);
 
-      // Fetch user details for version creators
-      const userIds = [...new Set(versionList.map((v) => v.createdBy))];
+      const userIds = [
+        ...new Set(versionList.map((v) => normalizeUserId(v.createdBy))),
+      ];
       await fetchUserDetails(userIds);
     } catch (err) {
       setError("Failed to load version history");
@@ -61,13 +135,13 @@ const VersionHistory = () => {
   const fetchContributions = useCallback(async () => {
     try {
       const response = await versionAPI.getUserContributions(documentId);
-      const contributionList = Array.isArray(response.data)
-        ? response.data
-        : [];
-      setContributions(contributionList);
+      const normalizedList = (Array.isArray(response.data) ? response.data : [])
+        .map((item) => normalizeContribution(item, documentId))
+        .filter(Boolean);
 
-      // Fetch user details for each contributor
-      const userIds = [...new Set(contributionList.map((c) => c.userId))];
+      setContributions(normalizedList);
+
+      const userIds = [...new Set(normalizedList.map((c) => c.userId))];
       await fetchUserDetails(userIds);
     } catch (err) {
       console.error("Failed to load contributions:", err);
@@ -102,19 +176,18 @@ const VersionHistory = () => {
         ) : (
           <div className="contributions-list">
             {contributions.map((contribution) => {
-              const user = userDetails[contribution.userId];
-              const userName = user
-                ? `${user.firstName} ${user.lastName}`.trim() || user.username
-                : `User ${contribution.userId ?? "Unknown"}`;
+              const userName = resolveUserName(contribution.userId);
+              const changeCount =
+                typeof contribution.changesCount === "number"
+                  ? contribution.changesCount
+                  : Number(contribution.changesCount ?? 0) || 0;
               return (
                 <div
-                  key={`${contribution.userId}-${contribution.id}`}
+                  key={`${contribution.userId ?? "unknown"}-${contribution.id}`}
                   className="contribution-item"
                 >
                   <span>{userName}:</span>
-                  <span className="count">
-                    {contribution.changesCount ?? 0} changes
-                  </span>
+                  <span className="count">{changeCount} changes</span>
                 </div>
               );
             })}
@@ -131,10 +204,7 @@ const VersionHistory = () => {
         ) : (
           <div className="versions-list">
             {versions.map((version, index) => {
-              const user = userDetails[version.createdBy];
-              const userName = user
-                ? `${user.firstName} ${user.lastName}`.trim() || user.username
-                : `User ${version.createdBy ?? "Unknown"}`;
+              const userName = resolveUserName(version.createdBy);
               return (
                 <div key={version.id} className="version-item">
                   <div className="version-info">

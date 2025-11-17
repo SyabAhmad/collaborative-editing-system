@@ -31,6 +31,9 @@ class DocumentServiceTest {
     @Mock
     private DocumentChangeRepository changeRepository;
 
+    @Mock
+    private OTService otService;
+
     @InjectMocks
     private DocumentService documentService;
 
@@ -95,6 +98,7 @@ class DocumentServiceTest {
     @Test
     void testGetDocumentSuccess() {
         when(documentRepository.findById(1L)).thenReturn(Optional.of(document));
+        when(otService.getDocumentContent(1L)).thenReturn("Content");
 
         DocumentDTO result = documentService.getDocument(1L);
 

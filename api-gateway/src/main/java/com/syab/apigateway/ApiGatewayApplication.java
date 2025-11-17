@@ -24,6 +24,9 @@ public class ApiGatewayApplication {
                 .route("version-control", r -> r
                         .path("/api/versions/**")
                         .uri("http://localhost:8084"))
+                .route("document-websocket", r -> r
+                        .path("/ws/**")
+                        .uri("http://localhost:8083"))
                 .build();
     }
 }

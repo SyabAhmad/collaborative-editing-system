@@ -22,3 +22,14 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+memory-bank
+.github
+
+architect.chatmode.md
+debug.chatmode.md
+code.chatmode.md
+ask.chatmode.md
+
+.github/*
+!.github/workflows

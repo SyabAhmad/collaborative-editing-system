@@ -10,10 +10,13 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @RestController
 @RequestMapping("/api/documents")
 public class DocumentController {
+    private static final Logger logger = LoggerFactory.getLogger(DocumentController.class);
     private final DocumentService documentService;
 
     public DocumentController(DocumentService documentService) {
@@ -41,6 +44,7 @@ public class DocumentController {
             @PathVariable Long documentId,
             @RequestParam Long userId,
             @Valid @RequestBody EditDocumentRequest request) {
+        logger.info("Edit request for docId={} by userId={} op={} length={}", documentId, userId, request.getOperationType(), request.getContent() == null ? 0 : request.getContent().length());
         DocumentDTO document = documentService.editDocument(documentId, userId, request);
         return ResponseEntity.ok(document);
     }
@@ -61,8 +65,13 @@ public class DocumentController {
      */
     @GetMapping("/{documentId}")
     public ResponseEntity<DocumentDTO> getDocument(@PathVariable Long documentId) {
-        DocumentDTO document = documentService.getDocument(documentId);
-        return ResponseEntity.ok(document);
+        try {
+            DocumentDTO document = documentService.getDocument(documentId);
+            return ResponseEntity.ok(document);
+        } catch (Exception ex) {
+            logger.error("Failed to fetch document {}", documentId, ex);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
     }
 
     /**

@@ -128,3 +128,38 @@
   margin-bottom: 1rem;
   border-left: 4px solid #3c3;
 }
+
+.editor-content {
+  display: flex;
+  gap: 2rem;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e0e0e0;
+  overflow: hidden;
+}
+
+.editor-main {
+  flex: 1;
+  padding: 1.5rem;
+}
+
+.presence-panel {
+  width: 250px;
+  border-left: 1px solid #e0e0e0;
+  padding: 1.5rem;
+  background: #f8f9fa;
+}
+
+.connection-status {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.connection-status .connected {
+  color: #4caf50;
+}
+
+.connection-status .disconnected {
+  color: #f44336;
+}
