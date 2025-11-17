@@ -46,6 +46,11 @@
   display: flex;
   gap: 1rem;
 }
+.autosave-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
 
 .save-btn,
 .version-btn,
@@ -181,6 +186,15 @@
 .live-user.current-user {
   border: 2px solid #667eea;
   border-radius: 50%;
+}
+
+.live-user.online {
+  box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.15);
+  border-radius: 50%;
+}
+
+.live-user.online .MuiAvatar-root {
+  border: 2px solid #4caf50;
 }
 
 .remote-update-message {

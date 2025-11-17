@@ -24,6 +24,7 @@ import {
   Share as ShareIcon,
 } from "@mui/icons-material";
 import { useAuth } from "../../context/AuthContext";
+import { authAPI } from "../../services/endpoints";
 import { documentAPI } from "../../services/endpoints";
 
 const DocumentList = () => {
@@ -33,12 +34,24 @@ const DocumentList = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [newDocTitle, setNewDocTitle] = useState("");
+  const [ownerProfiles, setOwnerProfiles] = useState({});
 
   const fetchDocuments = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await documentAPI.getUserDocuments(user.id);
-      setDocuments(response.data || []);
+      const [ownedResp, sharedResp] = await Promise.all([
+        documentAPI.getUserDocuments(user.id),
+        documentAPI.getSharedDocuments(user.id),
+      ]);
+      const ownedDocs = ownedResp.data || [];
+      const sharedDocs = sharedResp.data || [];
+      // merge unique documents (owned + shared) and prefer owned doc fields if duplicates
+      const map = new Map();
+      ownedDocs.forEach((d) => map.set(d.id, d));
+      sharedDocs.forEach((d) => {
+        if (!map.has(d.id)) map.set(d.id, d);
+      });
+      setDocuments(Array.from(map.values()));
     } catch {
       setError("Failed to load documents");
     } finally {
@@ -49,6 +62,40 @@ const DocumentList = () => {
   useEffect(() => {
     fetchDocuments();
   }, [fetchDocuments]);
+
+  // For shared documents, fetch owner profile to show 'shared by' info
+  useEffect(() => {
+    // Collect unique ownerIds for shared docs which are not the current user
+    const ownerIds = Array.from(
+      new Set(
+        documents
+          .filter((d) => d.isShared && d.ownerId !== user.id)
+          .map((d) => d.ownerId)
+      )
+    );
+    if (ownerIds.length === 0) return;
+    let isMounted = true;
+    Promise.all(
+      ownerIds.map(async (ownerId) => {
+        try {
+          const resp = await authAPI.getProfile(ownerId);
+          return [ownerId, resp.data];
+        } catch (err) {
+          return [ownerId, null];
+        }
+      })
+    ).then((results) => {
+      if (!isMounted) return;
+      const map = { ...ownerProfiles };
+      results.forEach(([ownerId, profile]) => {
+        if (profile) map[ownerId] = profile;
+      });
+      setOwnerProfiles(map);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [documents, user.id]);
 
   const handleCreateDocument = async () => {
     if (!newDocTitle.trim()) {
@@ -81,6 +128,16 @@ const DocumentList = () => {
       document.body.removeChild(textArea);
       alert("Document link copied to clipboard!");
     }
+  };
+
+  // Return a clean preview string limited to maxChars
+  const getPreview = (text, maxChars = 45) => {
+    if (!text) return "No content yet...";
+    // collapse whitespace and remove newlines so the preview doesn't expand the card
+    const cleaned = text.replace(/\s+/g, " ").trim();
+    return cleaned.length <= maxChars
+      ? cleaned
+      : cleaned.substring(0, maxChars) + "...";
   };
 
   return (
@@ -213,12 +270,14 @@ const DocumentList = () => {
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                         display: "-webkit-box",
-                        WebkitLineClamp: 3,
+                        WebkitLineClamp: 1,
                         WebkitBoxOrient: "vertical",
                         lineHeight: 1.4,
+                        wordBreak: "break-word",
+                        whiteSpace: "nowrap",
                       }}
                     >
-                      {doc.content?.substring(0, 150) || "No content yet..."}
+                      {getPreview(doc.content, 45)}
                     </Typography>
                     <Box
                       sx={{
@@ -228,12 +287,31 @@ const DocumentList = () => {
                         alignItems: "center",
                       }}
                     >
-                      <Chip
-                        label={`ID: ${doc.id}`}
-                        size="small"
-                        variant="outlined"
-                        sx={{ fontSize: "0.7rem" }}
-                      />
+                      <Box
+                        sx={{ display: "flex", gap: 1, alignItems: "center" }}
+                      >
+                        <Chip
+                          label={`ID: ${doc.id}`}
+                          size="small"
+                          variant="outlined"
+                          sx={{ fontSize: "0.7rem" }}
+                        />
+                        {doc.isShared && doc.ownerId !== user.id && (
+                          <Tooltip
+                            title={`Shared by ${
+                              ownerProfiles[doc.ownerId]?.username || "someone"
+                            }`}
+                          >
+                            <Chip
+                              label="Remote"
+                              size="small"
+                              color="info"
+                              variant="outlined"
+                              sx={{ fontSize: "0.7rem" }}
+                            />
+                          </Tooltip>
+                        )}
+                      </Box>
                       {doc.updatedAt && (
                         <Typography variant="caption" color="text.secondary">
                           Updated:{" "}

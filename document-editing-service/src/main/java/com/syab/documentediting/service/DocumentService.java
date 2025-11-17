@@ -8,6 +8,13 @@ import com.syab.documentediting.model.DocumentChange;
 import com.syab.documentediting.repository.DocumentChangeRepository;
 import com.syab.documentediting.repository.DocumentRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CompletableFuture;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -19,6 +26,9 @@ import java.util.stream.Collectors;
 public class DocumentService {
     private final DocumentRepository documentRepository;
     private final DocumentChangeRepository changeRepository;
+    private final Map<Long, CopyOnWriteArrayList<SseEmitter>> emitters = new ConcurrentHashMap<>();
+    private final Map<SseEmitter, Long> emitterToUser = new ConcurrentHashMap<>();
+    private final Map<Long, Set<Long>> onlineUsers = new ConcurrentHashMap<>();
 
     public DocumentService(DocumentRepository documentRepository, DocumentChangeRepository changeRepository) {
         this.documentRepository = documentRepository;
@@ -62,7 +72,97 @@ public class DocumentService {
         change.setOperationType(request.getOperationType());
         changeRepository.save(change);
 
+        // broadcast the change to SSE subscribers
+        broadcastDocumentChange(documentId, convertToDTO(updatedDocument), convertChangeToDTO(change));
+
         return convertToDTO(updatedDocument);
+    }
+
+    public SseEmitter subscribeToDocument(Long documentId, Long userId) {
+        SseEmitter emitter = new SseEmitter(0L); // no timeout
+        emitters.computeIfAbsent(documentId, k -> new CopyOnWriteArrayList<>()).add(emitter);
+        emitterToUser.put(emitter, userId);
+        onlineUsers.computeIfAbsent(documentId, k -> ConcurrentHashMap.newKeySet()).add(userId);
+        // broadcast updated presence
+        broadcastPresence(documentId);
+
+        emitter.onCompletion(() -> removeEmitter(documentId, emitter));
+        emitter.onTimeout(() -> removeEmitter(documentId, emitter));
+        emitter.onError((e) -> removeEmitter(documentId, emitter));
+
+        // Optionally, send a welcome event with current document state
+        try {
+            DocumentDTO doc = getDocument(documentId);
+            emitter.send(SseEmitter.event().name("init").data(doc));
+        } catch (Exception e) {
+            // ignore
+        }
+
+        return emitter;
+    }
+
+    private void removeEmitter(Long documentId, SseEmitter emitter) {
+        List<SseEmitter> list = emitters.get(documentId);
+        if (list != null) {
+            list.remove(emitter);
+        }
+        Long uid = emitterToUser.remove(emitter);
+        if (uid != null) {
+            Set<Long> users = onlineUsers.get(documentId);
+            if (users != null) {
+                // Check if any other emitter remains for this same user
+                boolean stillHasEmitter = false;
+                List<SseEmitter> remaining = emitters.get(documentId);
+                if (remaining != null && !remaining.isEmpty()) {
+                    for (SseEmitter e : remaining) {
+                        Long u = emitterToUser.get(e);
+                        if (u != null && u.equals(uid)) {
+                            stillHasEmitter = true;
+                            break;
+                        }
+                    }
+                }
+                if (!stillHasEmitter) {
+                    users.remove(uid);
+                }
+                // if no more online users, remove set
+                if (users.isEmpty()) onlineUsers.remove(documentId);
+            }
+            broadcastPresence(documentId);
+        }
+    }
+
+    private void broadcastPresence(Long documentId) {
+        List<SseEmitter> list = emitters.get(documentId);
+        if (list == null) return;
+        Set<Long> users = onlineUsers.get(documentId);
+        List<Long> userList = users == null ? List.of() : List.copyOf(users);
+
+        for (SseEmitter emitter : list) {
+            CompletableFuture.runAsync(() -> {
+                try {
+                    emitter.send(SseEmitter.event().name("presence").data(userList));
+                } catch (Exception e) {
+                    removeEmitter(documentId, emitter);
+                }
+            });
+        }
+    }
+
+    private void broadcastDocumentChange(Long documentId, DocumentDTO documentDTO, DocumentChangeDTO changeDTO) {
+        List<SseEmitter> list = emitters.get(documentId);
+        if (list == null) return;
+
+        for (SseEmitter emitter : list) {
+            CompletableFuture.runAsync(() -> {
+                try {
+                    var payload = Map.of("document", documentDTO, "change", changeDTO);
+                    emitter.send(SseEmitter.event().name("document").data(payload));
+                } catch (Exception e) {
+                    removeEmitter(documentId, emitter);
+                }
+            });
+        }
     }
 
     /**
@@ -89,6 +189,15 @@ public class DocumentService {
     public List<DocumentDTO> getUserDocuments(Long userId) {
         List<Document> documents = documentRepository.findByOwnerId(userId);
         return documents.stream().map(this::convertToDTO).collect(Collectors.toList());
+    }
+
+    public List<DocumentDTO> getSharedDocuments(Long userId) {
+        // Return documents that are shared (isShared true) and not owned by the user
+        List<Document> documents = documentRepository.findByIsSharedTrue();
+        return documents.stream()
+                .filter(d -> !d.getOwnerId().equals(userId))
+                .map(this::convertToDTO)
+                .collect(Collectors.toList());
     }
 
     private DocumentDTO convertToDTO(Document document) {

@@ -8,6 +8,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 
@@ -73,5 +74,24 @@ public class DocumentController {
     public ResponseEntity<List<DocumentDTO>> getUserDocuments(@PathVariable Long userId) {
         List<DocumentDTO> documents = documentService.getUserDocuments(userId);
         return ResponseEntity.ok(documents);
+    }
+
+    /**
+     * Get all shared documents (documents shared by others) for this user
+     * GET /api/documents/shared/{userId}
+     */
+    @GetMapping("/shared/{userId}")
+    public ResponseEntity<List<DocumentDTO>> getSharedDocuments(@PathVariable Long userId) {
+        List<DocumentDTO> documents = documentService.getSharedDocuments(userId);
+        return ResponseEntity.ok(documents);
+    }
+
+    /**
+     * SSE stream: Subscribe to document changes/events
+     * GET /api/documents/{documentId}/stream
+     */
+    @GetMapping("/{documentId}/stream")
+    public SseEmitter streamDocument(@PathVariable Long documentId, @RequestParam(required = false) Long userId) {
+        return documentService.subscribeToDocument(documentId, userId);
     }
 }

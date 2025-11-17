@@ -11,4 +11,5 @@ import java.util.Optional;
 public interface DocumentRepository extends JpaRepository<Document, Long> {
     List<Document> findByOwnerId(Long ownerId);
     Optional<Document> findByIdAndOwnerId(Long id, Long ownerId);
+    List<Document> findByIsSharedTrue();
 }

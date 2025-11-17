@@ -1,8 +1,15 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Button, Avatar, Tooltip } from "@mui/material";
+import {
+  Button,
+  Avatar,
+  Tooltip,
+  Switch,
+  FormControlLabel,
+} from "@mui/material";
 import { Share as ShareIcon } from "@mui/icons-material";
 import { useAuth } from "../../context/AuthContext";
+import { useDocuments } from "../../context/DocumentContext";
 import { documentAPI, versionAPI, authAPI } from "../../services/endpoints";
 import "../styles/DocumentEditor.css";
 
@@ -10,120 +17,28 @@ const DocumentEditor = () => {
   const { id } = useParams();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const {
+    subscribeToDocument,
+    unsubscribeFromDocument,
+    liveUsers,
+    onlineUsers,
+    lastChange,
+  } = useDocuments();
+
   const [doc, setDoc] = useState(null);
   const [content, setContent] = useState("");
   const [isSaving, setIsSaving] = useState(false);
-  const [savedStatus, setSavedStatus] = useState("");
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(false);
+  // auto-version removed; manual versioning remains available via button
+  const autoSaveTimerRef = useRef(null);
   const [error, setError] = useState("");
   const [lastFetchedContent, setLastFetchedContent] = useState("");
   const [remoteChangeDetected, setRemoteChangeDetected] = useState(false);
   const [remoteContent, setRemoteContent] = useState("");
   const [remoteChangeAuthor, setRemoteChangeAuthor] = useState(null);
-  const [liveUsers, setLiveUsers] = useState([]);
-  const userCacheRef = useRef({});
-  const pollRef = useRef(null);
+  const [remoteChangeIsMine, setRemoteChangeIsMine] = useState(false);
 
   const contentRef = useRef(content);
-  useEffect(() => {
-    contentRef.current = content;
-  }, [content]);
-
-  useEffect(() => {
-    const fetchDocument = async () => {
-      try {
-        const response = await documentAPI.getDocument(id);
-        setDoc(response.data);
-        setContent(response.data.content || "");
-        setLastFetchedContent(response.data.content || "");
-      } catch (err) {
-        setError("Failed to load document");
-      }
-    };
-
-    if (id) {
-      fetchDocument();
-    }
-  }, [id]);
-
-  // Poll for remote changes (simple polling to support realtime updates)
-  useEffect(() => {
-    const startPolling = () => {
-      if (!id) return;
-      if (pollRef.current) return; // avoid multiple intervals
-      pollRef.current = setInterval(async () => {
-        try {
-          const response = await documentAPI.getDocument(id);
-          const serverContent = response.data?.content || "";
-          // Also fetch recent document changes to determine contributors
-          const changesResp = await documentAPI.getDocumentChanges(id);
-          const changes = Array.isArray(changesResp.data) ? changesResp.data : [];
-          // derive live user ids from recent edits (unique)
-          const userIds = Array.from(new Set(changes.map((c) => c.userId)));
-          // fetch profiles for the userIds and cache them
-          const missingUserIds = userIds.filter((uid) => !userCacheRef.current[uid]);
-          if (missingUserIds.length > 0) {
-            await Promise.all(
-              missingUserIds.map(async (uid) => {
-                try {
-                  const uresp = await authAPI.getProfile(uid);
-                  userCacheRef.current[uid] = uresp.data;
-                } catch (err) {
-                  // ignore profile fetch errors
-                }
-              })
-            );
-          }
-          const profiles = userIds
-            .map((uid) => userCacheRef.current[uid])
-            .filter(Boolean);
-          setLiveUsers(profiles);
-          // If server content changed since last fetch
-          if (serverContent !== lastFetchedContent) {
-            // If the user has no unsaved changes, update automatically
-            if (contentRef.current === lastFetchedContent) {
-              setContent(serverContent);
-              setLastFetchedContent(serverContent);
-              setSavedStatus("Updated with remote changes");
-              setTimeout(() => setSavedStatus(""), 3000);
-            } else {
-              // If the user has unsaved edits, notify and offer to apply remote changes
-              setRemoteChangeDetected(true);
-              setRemoteContent(serverContent);
-              // find a change that matches the content or fallback to the last change
-              const changeForContent =
-                changes.find((c) => c.changeContent === serverContent) ||
-                changes[changes.length - 1];
-              if (changeForContent) {
-                const authorId = changeForContent.userId;
-                // ensure profile cached
-                if (!userCacheRef.current[authorId]) {
-                  try {
-                    const aresp = await authAPI.getProfile(authorId);
-                    userCacheRef.current[authorId] = aresp.data;
-                  } catch (err) {
-                    // ignore
-                  }
-                }
-                setRemoteChangeAuthor(userCacheRef.current[authorId] || null);
-              } else {
-                setRemoteChangeAuthor(null);
-              }
-            }
-          }
-        } catch (err) {
-          // ignore polling errors silently for now
-        }
-      }, 2000);
-    };
-
-    startPolling();
-    return () => {
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
-    };
-  }, [id, lastFetchedContent]);
 
   const handleSave = useCallback(async () => {
     if (!content.trim()) {
@@ -132,19 +47,122 @@ const DocumentEditor = () => {
     }
 
     setIsSaving(true);
-    setSavedStatus("");
     try {
       await documentAPI.editDocument(id, user.id, content, "UPDATE");
-      setSavedStatus("Document saved successfully!");
-      // update last fetched content since save is now persisted
+      // No UI success message – removed per request
+      // update last fetched content
       setLastFetchedContent(content);
-      setTimeout(() => setSavedStatus(""), 3000);
-    } catch (err) {
+      // auto-versioning removed
+    } catch {
       setError("Failed to save document");
     } finally {
       setIsSaving(false);
     }
-  }, [id, user?.id, content, setIsSaving, setSavedStatus]);
+  }, [id, user?.id, content]);
+
+  useEffect(() => {
+    contentRef.current = content;
+    // If autosave enabled, debounce save (3s)
+    if (autoSaveEnabled) {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = setTimeout(async () => {
+        // Avoid autosave while already saving
+        if (!isSaving && contentRef.current.trim()) {
+          await handleSave();
+          // auto-versioning removed
+        }
+      }, 2000);
+    } else if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+    };
+  }, [content, autoSaveEnabled, handleSave, isSaving]);
+
+  useEffect(() => {
+    const fetchDocument = async () => {
+      try {
+        const response = await documentAPI.getDocument(id);
+        setDoc(response.data);
+        setContent(response.data.content || "");
+        setLastFetchedContent(response.data.content || "");
+      } catch {
+        setError("Failed to load document");
+      }
+    };
+
+    if (id) {
+      fetchDocument();
+      if (user) subscribeToDocument(id);
+    }
+    return () => unsubscribeFromDocument();
+  }, [id, user, subscribeToDocument, unsubscribeFromDocument]);
+  useEffect(() => {
+    if (!lastChange) return;
+    console.debug("DocumentEditor: lastChange update", lastChange);
+  }, [lastChange]);
+
+  // react to incoming SSE messages centralized in DocumentContext via `lastChange`
+  useEffect(() => {
+    if (!lastChange) return;
+    (async () => {
+      try {
+        const payload = lastChange; // { document, change }
+        const serverContent = payload?.document?.content || "";
+        const change = payload?.change;
+        // If server content changed since last fetch
+        if (serverContent !== lastFetchedContent) {
+          // update the doc meta too
+          if (payload.document) setDoc(payload.document);
+          if (contentRef.current === lastFetchedContent) {
+            setContent(serverContent);
+            setLastFetchedContent(serverContent);
+          } else {
+            const isMine = String(change?.userId) === String(user?.id);
+            if (import.meta.env.DEV) {
+              console.debug(
+                "DocumentEditor SSE change userId, local userId:",
+                change?.userId,
+                user?.id,
+                "isMine:",
+                isMine
+              );
+            }
+            setRemoteChangeIsMine(isMine);
+            // only show remote change banner to others; authors will see a saved status instead
+            setRemoteChangeDetected(!isMine);
+            setRemoteContent(serverContent);
+            // find author from liveUsers / onlineUsers in context
+            let author =
+              liveUsers.find((u) => u.id === change?.userId) ||
+              onlineUsers.find((u) => u.id === change?.userId) ||
+              null;
+            if (!author && change?.userId) {
+              // fallback: fetch user profile once
+              try {
+                const aresp = await authAPI.getProfile(change.userId);
+                author = aresp.data;
+              } catch {
+                // ignore
+              }
+            }
+            setRemoteChangeAuthor(author);
+            if (isMine) {
+              // For the author, don't show Apply/Ignore — the author already knows about their changes
+              setLastFetchedContent(serverContent);
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+    })();
+  }, [lastChange, lastFetchedContent, liveUsers, onlineUsers, user?.id]);
 
   // Ctrl+S hotkey: save the document
   useEffect(() => {
@@ -168,7 +186,7 @@ const DocumentEditor = () => {
       );
       alert("Version created successfully!");
       navigate(`/documents/${id}/versions`);
-    } catch (err) {
+    } catch {
       setError("Failed to create version");
     }
   };
@@ -178,7 +196,7 @@ const DocumentEditor = () => {
     try {
       await navigator.clipboard.writeText(shareUrl);
       alert("Document link copied to clipboard!");
-    } catch (err) {
+    } catch {
       const textArea = window.document.createElement("textarea");
       textArea.value = shareUrl;
       window.document.body.appendChild(textArea);
@@ -197,27 +215,55 @@ const DocumentEditor = () => {
             ← Back
           </button>
           <h2>{doc?.title || "New Document"}</h2>
+          <div className="live-users">
+            {onlineUsers
+              .filter((u) => u.id !== user?.id)
+              .map((u) => (
+                <Tooltip key={u.id} title={u.username} placement="bottom">
+                  <div
+                    className={`live-user ${
+                      onlineUsers.find((o) => o.id === u.id) ? "online" : ""
+                    }`}
+                  >
+                    <Avatar sx={{ width: 32, height: 32, fontSize: 14 }}>
+                      {u.username?.[0] || "?"}
+                    </Avatar>
+                  </div>
+                </Tooltip>
+              ))}
+            {/* Show current user only when online */}
+            {user && onlineUsers?.find((o) => o.id === user.id) && (
+              <Tooltip title={`${user.username} (You)`} placement="bottom">
+                <div className={`live-user current-user online`}>
+                  <Avatar sx={{ width: 32, height: 32, fontSize: 14 }}>
+                    {user.username?.[0] || "U"}
+                  </Avatar>
+                </div>
+              </Tooltip>
+            )}
+          </div>
         </div>
-            <div className="live-users">
-          {liveUsers
-            .filter((u) => u.id !== user?.id)
-            .map((u) => (
-            <Tooltip key={u.id} title={u.username} placement="bottom">
-              <div className="live-user">
-                <Avatar sx={{ width: 32, height: 32, fontSize: 14 }}>{u.username?.[0] || "?"}</Avatar>
-              </div>
-            </Tooltip>
-          ))}
-          {/* Show current user (you) */}
-          {user && (
-            <Tooltip title={`${user.username} (You)`} placement="bottom">
-              <div className="live-user current-user">
-                <Avatar sx={{ width: 32, height: 32, fontSize: 14 }}>{user.username?.[0] || "U"}</Avatar>
-              </div>
-            </Tooltip>
-          )}
-            </div>
         <div className="editor-actions">
+          <div
+            className="autosave-controls"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "0.5rem",
+              marginRight: "1rem",
+            }}
+          >
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={autoSaveEnabled}
+                  onChange={(e) => setAutoSaveEnabled(e.target.checked)}
+                />
+              }
+              label="Auto-save"
+            />
+            {/* Auto-version toggle removed */}
+          </div>
           <Button
             variant="outlined"
             startIcon={<ShareIcon />}
@@ -240,7 +286,7 @@ const DocumentEditor = () => {
       </div>
 
       {error && <div className="error-message">{error}</div>}
-      {savedStatus && <div className="success-message">{savedStatus}</div>}
+      {/* saved/status messages removed per request */}
       {remoteChangeDetected && (
         <div className="remote-update-banner">
           <div className="remote-update-message">
@@ -249,27 +295,41 @@ const DocumentEditor = () => {
                 {remoteChangeAuthor.username?.[0] || "?"}
               </Avatar>
             )}
-            Remote changes detected{remoteChangeAuthor ? ` by ${remoteChangeAuthor.username}` : ""}.
+            {remoteChangeIsMine ? (
+              <>
+                Your changes were saved
+                {remoteChangeAuthor ? ` by ${remoteChangeAuthor.username}` : ""}
+                .
+              </>
+            ) : (
+              <>
+                Remote changes detected
+                {remoteChangeAuthor ? ` by ${remoteChangeAuthor.username}` : ""}
+                .
+              </>
+            )}
           </div>
           <div className="remote-update-actions">
-            <button
-              className="apply-remote-btn"
-              onClick={() => {
-                setContent(remoteContent);
-                setLastFetchedContent(remoteContent);
-                setRemoteChangeDetected(false);
-                setSavedStatus("Remote changes applied");
-                setTimeout(() => setSavedStatus(""), 3000);
-              }}
-            >
-              Apply Remote
-            </button>
-            <button
-              className="dismiss-remote-btn"
-              onClick={() => setRemoteChangeDetected(false)}
-            >
-              Ignore
-            </button>
+            {!remoteChangeIsMine && (
+              <>
+                <button
+                  className="apply-remote-btn"
+                  onClick={() => {
+                    setContent(remoteContent);
+                    setLastFetchedContent(remoteContent);
+                    setRemoteChangeDetected(false);
+                  }}
+                >
+                  Apply Remote
+                </button>
+                <button
+                  className="dismiss-remote-btn"
+                  onClick={() => setRemoteChangeDetected(false)}
+                >
+                  Ignore
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}

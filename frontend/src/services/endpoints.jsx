@@ -20,6 +20,7 @@ export const documentAPI = {
   getDocument: (documentId) => apiClient.get(`/documents/${documentId}`),
 
   getUserDocuments: (userId) => apiClient.get("/documents/user/" + userId),
+  getSharedDocuments: (userId) => apiClient.get("/documents/shared/" + userId),
 
   editDocument: (documentId, userId, content, operationType = "UPDATE") =>
     apiClient.put(
