@@ -21,6 +21,10 @@ public class ApiGatewayApplication {
                 .route("document-editing", r -> r
                         .path("/api/documents/**")
                         .uri("http://localhost:8083"))
+                // route to proxy WebSocket connections for document editing
+                .route("document-editing-ws", r -> r
+                        .path("/ws/**")
+                        .uri("http://localhost:8083"))
                 .route("version-control", r -> r
                         .path("/api/versions/**")
                         .uri("http://localhost:8084"))

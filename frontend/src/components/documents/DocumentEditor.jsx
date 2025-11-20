@@ -9,7 +9,7 @@ import {
 } from "@mui/material";
 import { Share as ShareIcon } from "@mui/icons-material";
 import { useAuth } from "../../context/AuthContext";
-import { useDocuments } from "../../context/DocumentContext";
+import { useDocuments, useDocumentWs } from "../../context/DocumentContext";
 import { documentAPI, versionAPI, authAPI } from "../../services/endpoints";
 import "../styles/DocumentEditor.css";
 
@@ -24,6 +24,7 @@ const DocumentEditor = () => {
     onlineUsers,
     lastChange,
   } = useDocuments();
+  const { wsSendEdit, wsConnected, wsLastError } = useDocumentWs();
 
   const [doc, setDoc] = useState(null);
   const [content, setContent] = useState("");
@@ -39,6 +40,7 @@ const DocumentEditor = () => {
   const [remoteChangeIsMine, setRemoteChangeIsMine] = useState(false);
 
   const contentRef = useRef(content);
+  const wsTimerRef = useRef(null);
 
   const handleSave = useCallback(async () => {
     if (!content.trim()) {
@@ -49,6 +51,12 @@ const DocumentEditor = () => {
     setIsSaving(true);
     try {
       await documentAPI.editDocument(id, user.id, content, "UPDATE");
+      // Also attempt to broadcast via websocket for immediate update to other clients
+      try {
+        wsSendEdit(Number(id), user.id, content, "UPDATE");
+      } catch (e) {
+        void e;
+      }
       // No UI success message – removed per request
       // update last fetched content
       setLastFetchedContent(content);
@@ -58,7 +66,7 @@ const DocumentEditor = () => {
     } finally {
       setIsSaving(false);
     }
-  }, [id, user?.id, content]);
+  }, [id, user?.id, content, wsSendEdit]);
 
   useEffect(() => {
     contentRef.current = content;
@@ -215,6 +223,22 @@ const DocumentEditor = () => {
             ← Back
           </button>
           <h2>{doc?.title || "New Document"}</h2>
+          <div
+            style={{ display: "inline-block", marginLeft: "12px" }}
+            title={wsLastError || ""}
+          >
+            {wsConnected ? (
+              <span style={{ color: "green", fontSize: "0.9rem" }}>
+                Realtime: WS
+              </span>
+            ) : (
+              <span style={{ color: "gray", fontSize: "0.9rem" }}>
+                {wsLastError
+                  ? `Realtime: SSE (ws error: ${wsLastError})`
+                  : "Realtime: SSE"}
+              </span>
+            )}
+          </div>
           <div className="live-users">
             {onlineUsers
               .filter((u) => u.id !== user?.id)
@@ -336,7 +360,19 @@ const DocumentEditor = () => {
 
       <textarea
         value={content}
-        onChange={(e) => setContent(e.target.value)}
+        onChange={(e) => {
+          const val = e.target.value;
+          setContent(val);
+          // Debounce ws broadcast to reduce flood
+          if (wsTimerRef.current) clearTimeout(wsTimerRef.current);
+          wsTimerRef.current = setTimeout(() => {
+            try {
+              wsSendEdit(Number(id), user.id, val, "UPDATE");
+            } catch (e) {
+              void e;
+            }
+          }, 600);
+        }}
         placeholder="Start editing your document..."
         className="editor-textarea"
       />

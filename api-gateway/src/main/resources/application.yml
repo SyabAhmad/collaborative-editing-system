@@ -20,6 +20,13 @@ spring:
           filters:
             - StripPrefix=0
 
+        - id: document-editing-ws
+          uri: http://localhost:8083
+          predicates:
+            - Path=/ws/**
+          filters:
+            - StripPrefix=0
+
         - id: version-control
           uri: http://localhost:8084
           predicates:
@@ -35,3 +42,7 @@ server:
 eureka:
   client:
     enabled: false
+
+logging:
+  level:
+    org.springframework.cloud.gateway: DEBUG

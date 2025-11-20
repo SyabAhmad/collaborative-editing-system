@@ -371,6 +371,7 @@ All services include JUnit tests with Mockito for service layer testing.
 ## Future Enhancements
 
 - WebSocket integration for real-time collaboration
+- WebSocket integration for low-latency collaboration (optional alongside SSE)
 - Redis caching for performance
 - Message queues for async operations
 - Eureka service discovery

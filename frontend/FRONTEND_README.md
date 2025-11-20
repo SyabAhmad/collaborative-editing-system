@@ -50,6 +50,7 @@ frontend/
 - **Protected Routes**: Routes are protected with authentication checks
 - **State Management**: Context API for auth and document state
 - **API Integration**: Axios-based service layer for backend communication
+- **Real-time**: Uses Server-Sent Events (SSE) for presence and a WebSocket channel for low-latency edit updates
 
 ## Setup & Installation
 
@@ -81,6 +82,12 @@ Ensure the backend services are running:
 - User Management: `http://localhost:8082`
 - Document Editing: `http://localhost:8083`
 - Version Control: `http://localhost:8084`
+
+### Custom backend URL
+
+- The frontend defaults to `/api` so requests go through the API Gateway (port `8081`).
+- When running a service directly (e.g., document editing on `8083`) without the gateway, set `VITE_API_URL` to `http://localhost:8083/api` and restart the dev server.
+- Store overrides in `.env.local` or `.env` in the `frontend` directory, e.g. `VITE_API_URL=http://localhost:8081/api`.
 
 ## API Endpoints Used
 

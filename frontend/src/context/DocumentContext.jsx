@@ -20,7 +20,12 @@ export const DocumentProvider = ({ children }) => {
   const [liveUsers, setLiveUsers] = useState([]);
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [lastChange, setLastChange] = useState(null);
+  const [wsConnected, setWsConnected] = useState(false);
+  const [wsLastError, setWsLastError] = useState(null);
   const sseRef = useRef(null);
+  const wsRef = useRef(null);
+  const wsGracefulCloseRef = useRef(false);
+  const wsReconnectAttemptsRef = useRef({});
   const subscribedDocRef = useRef(null);
   const userCacheRef = useRef({});
   const { user } = useAuth();
@@ -76,7 +81,7 @@ export const DocumentProvider = ({ children }) => {
                 const uresp = await authAPI.getProfile(uid);
                 userCacheRef.current[uid] = uresp.data;
               } catch (err) {
-                // ignore
+                console.error("Error occurred", err);
               }
             })
           );
@@ -176,6 +181,172 @@ export const DocumentProvider = ({ children }) => {
           setLastChange(null);
         }
       };
+
+      // WebSocket: for small immediate edit broadcasts
+      try {
+        const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
+        const wsHost = window.location.hostname;
+        const wsUrl = `${wsProtocol}://${wsHost}:8083/ws/documents?documentId=${documentId}&userId=${user?.id}`;
+        // In dev use direct service first (8083) then fallback to gateway (8081) if handshake fails
+        const directUrl = `${wsProtocol}://${wsHost}:8083/ws/documents?documentId=${documentId}&userId=${user?.id}`;
+        const gatewayUrl = `${wsProtocol}://${wsHost}:8081/ws/documents?documentId=${documentId}&userId=${user?.id}`;
+        if (wsRef.current) {
+          try {
+            wsRef.current.close();
+          } catch (e) {}
+        }
+        // helper to attempt ws connect with a provided url, returns a Promise that resolves to ws or rejects
+        const tryConnect = (url) =>
+          new Promise((resolve, reject) => {
+            try {
+              const w = new WebSocket(url);
+              const timeout = setTimeout(() => {
+                if (w.readyState !== WebSocket.OPEN) {
+                  try {
+                    w.close();
+                  } catch (e) {}
+                  reject(new Error("timeout"));
+                }
+              }, 1500);
+              w.onopen = () => {
+                clearTimeout(timeout);
+                resolve(w);
+              };
+              w.onerror = (err) => {
+                clearTimeout(timeout);
+                try {
+                  w.close();
+                } catch (e) {}
+                reject(err);
+              };
+            } catch (err) {
+              reject(err);
+            }
+          });
+
+        let ws = null;
+        try {
+          ws = await tryConnect(directUrl);
+          console.debug("WebSocket connected via direct service", directUrl);
+        } catch (errDirect) {
+          try {
+            ws = await tryConnect(gatewayUrl);
+            console.debug("WebSocket connected via gateway", gatewayUrl);
+          } catch (errGw) {
+            console.error(
+              "WS connect attempts to direct and gateway failed",
+              errDirect,
+              errGw
+            );
+            // fallback behavior: set wsRef null, downstream logic will fall back to SSE
+            ws = null;
+          }
+        }
+        if (!ws) {
+          // early exit: no WS connection established
+          return;
+        }
+        wsRef.current = ws;
+        ws.onopen = () => {
+          console.debug("WebSocket: connected to", wsUrl);
+          setWsConnected(true);
+          const key = String(documentId);
+          wsReconnectAttemptsRef.current[key] = 0;
+          wsGracefulCloseRef.current = false;
+
+          // Heartbeat mechanism: send ping every 30 seconds
+          ws.heartbeatInterval = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+              try {
+                ws.send(JSON.stringify({ type: "ping" }));
+              } catch (e) {
+                /* ignore */
+              }
+            }
+          }, 30000);
+        };
+        ws.onmessage = (ev) => {
+          try {
+            const payload = JSON.parse(ev.data);
+            // payload is {document, change}
+            setLastChange(payload);
+          } catch (err) {
+            // ignore
+          }
+        };
+        ws.onclose = (ev) => {
+          wsRef.current = null;
+          setWsConnected(false);
+          const code = ev?.code ?? "unknown";
+          const reason = ev?.reason || null;
+          try {
+            setWsLastError(reason || `Close code ${code}`);
+          } catch (e) {
+            /* ignore */
+          }
+
+          // mark graceful close (1000) so UI can treat it differently
+          wsGracefulCloseRef.current = code === 1000;
+
+          // Clear heartbeat interval
+          if (ws.heartbeatInterval) {
+            clearInterval(ws.heartbeatInterval);
+          }
+
+          // try reconnect a few times for abnormal closures
+          const key = String(documentId);
+          const attempts = wsReconnectAttemptsRef.current[key] || 0;
+          if (!wsGracefulCloseRef.current && attempts < 3) {
+            wsReconnectAttemptsRef.current[key] = attempts + 1;
+            const backoff = 500 * (attempts + 1);
+            setTimeout(() => subscribeToDocument(documentId), backoff);
+            console.warn(
+              "WebSocket closed, attempting reconnect",
+              attempts + 1
+            );
+          } else if (!wsGracefulCloseRef.current) {
+            // give up and rely on SSE
+            console.warn(
+              "WebSocket reconnect attempts exhausted, falling back to SSE only"
+            );
+            wsReconnectAttemptsRef.current[key] = 0;
+          } else {
+            // graceful close: don't mark as error fallback, attempt a gentle reconnect
+            console.debug("WebSocket closed gracefully (1000)");
+            setTimeout(() => subscribeToDocument(documentId), 1000);
+          }
+        };
+        ws.onerror = (err) => {
+          console.error("WebSocket error", err);
+          setWsConnected(false);
+          try {
+            setWsLastError(err?.message || String(err));
+          } catch (e) {}
+
+          // Clear heartbeat interval
+          if (ws.heartbeatInterval) {
+            clearInterval(ws.heartbeatInterval);
+          }
+        };
+      } catch (err) {
+        console.error("Failed to open WebSocket", err);
+      }
+      // Add a short reconnect / diagnostic time in case of immediate close
+      // If wsRef set to null by onclose, log the failure
+      const connTry = setTimeout(() => {
+        if (!wsRef.current) {
+          if (wsGracefulCloseRef.current) {
+            console.debug(
+              "WebSocket closed gracefully before open; not treating as error"
+            );
+          } else {
+            console.warn(
+              "WebSocket closed before connection established - fallback to SSE only"
+            );
+          }
+        }
+        clearTimeout(connTry);
+      }, 1200);
     },
     [user?.id]
   );
@@ -188,7 +359,37 @@ export const DocumentProvider = ({ children }) => {
     }
     setLiveUsers([]);
     setLastChange(null);
+    if (wsRef.current) {
+      try {
+        wsRef.current.close();
+      } catch (e) {}
+      wsRef.current = null;
+    }
+    setWsConnected(false);
+    setWsLastError(null);
   }, []);
+
+  // send a websocket edit message for immediate broadcasting
+  const wsSendEdit = useCallback(
+    (documentId, userId, content, operationType = "UPDATE") => {
+      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN)
+        return false;
+      try {
+        const msg = JSON.stringify({
+          documentId,
+          userId,
+          content,
+          operationType,
+        });
+        wsRef.current.send(msg);
+        return true;
+      } catch (err) {
+        console.error("Failed to send ws edit", err);
+        return false;
+      }
+    },
+    []
+  );
 
   return (
     <DocumentContext.Provider
@@ -209,6 +410,10 @@ export const DocumentProvider = ({ children }) => {
         liveUsers,
         onlineUsers,
         lastChange,
+        wsSendEdit,
+        wsRef,
+        wsConnected,
+        wsLastError,
       }}
     >
       {children}
@@ -222,4 +427,16 @@ export const useDocuments = () => {
     throw new Error("useDocuments must be used within DocumentProvider");
   }
   return context;
+};
+
+export const useDocumentWs = () => {
+  const ctx = useContext(DocumentContext);
+  if (!ctx)
+    throw new Error("useDocumentWs must be used within DocumentProvider");
+  return {
+    wsSendEdit: ctx.wsSendEdit,
+    wsRef: ctx.wsRef,
+    wsConnected: ctx.wsConnected,
+    wsLastError: ctx.wsLastError,
+  };
 };
