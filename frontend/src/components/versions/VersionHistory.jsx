@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { versionAPI, authAPI } from "../../services/endpoints";
+import { versionAPI, authAPI, documentAPI } from "../../services/endpoints";
 import { formatDate } from "../../utils/helpers";
 import "../styles/VersionHistory.css";
 
@@ -78,8 +78,13 @@ const VersionHistory = () => {
     if (window.confirm(`Revert to version ${versionNumber}?`)) {
       try {
         await versionAPI.revertToVersion(documentId, versionNumber);
-        alert("Document reverted successfully!");
+        alert(
+          "Document reverted successfully! Returning to editor to refresh content."
+        );
+        // After revert, refresh versions and go back to the document editor to show reverted content
         fetchVersions();
+        // Navigate back to document editor – the editor will fetch latest content and subscribe to SSE
+        navigate(`/documents/${documentId}`);
       } catch (err) {
         setError("Failed to revert version");
       }
